@@ -1,201 +1,143 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-import os
 from datetime import datetime
+import os
+
+from database import *
+from utils import salvar_imagem
 
 # ==============================================================================
-# CONFIGURAÇÃO
+# CONFIG
 # ==============================================================================
-st.set_page_config(page_title="Radar Encarte PRO", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Radar Encarte PRO", layout="wide")
 
-# Criar pasta uploads
-if not os.path.exists("uploads"):
-    os.makedirs("uploads")
-
-# ==============================================================================
-# BANCO DE DADOS
-# ==============================================================================
-conn = sqlite3.connect("radar.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS encartes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    produto TEXT,
-    preco REAL,
-    loja TEXT,
-    imagem TEXT,
-    data TEXT,
-    curtidas INTEGER DEFAULT 0
-)
-""")
-conn.commit()
-
-# Garantir coluna data
-cursor.execute("PRAGMA table_info(encartes)")
-cols = [col[1] for col in cursor.fetchall()]
-if "data" not in cols:
-    cursor.execute("ALTER TABLE encartes ADD COLUMN data TEXT")
-    conn.commit()
+conn = conectar()
+criar_tabelas(conn)
 
 # ==============================================================================
-# TEMA CLARO
+# CSS LIGHT CLEAN
 # ==============================================================================
 st.markdown("""
 <style>
-.stApp {
-    background-color: #f8fafc;
-    color: #1e293b;
+.stApp { background:#f8fafc; }
+
+.card {
+    background:white;
+    padding:20px;
+    border-radius:12px;
+    border:1px solid #e2e8f0;
+    margin-bottom:15px;
 }
 
-.offer-card {
-    background-color: #ffffff;
-    padding: 20px;
-    border-radius: 12px;
-    border: 1px solid #e2e8f0;
-    margin-bottom: 15px;
-}
-
-.price-tag {
-    font-size: 26px;
-    color: #16a34a;
-    font-weight: bold;
-}
-
-.loja-tag {
-    color: #64748b;
-    font-size: 13px;
-    text-transform: uppercase;
-}
+.price { color:#16a34a; font-size:24px; font-weight:bold; }
+.loja { color:#64748b; font-size:12px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
 # MENU
 # ==============================================================================
-st.sidebar.title("📡 Radar SaaS HUB")
-menu = st.sidebar.radio("Menu", ["Dashboard", "Enviar Encarte", "Análise"])
+menu = st.sidebar.radio("Menu", ["Dashboard", "Novo Encarte", "Análise"])
 
 # ==============================================================================
 # DASHBOARD
 # ==============================================================================
 if menu == "Dashboard":
-    st.title("🔥 Ofertas Disponíveis")
+    st.title("🔥 Radar de Ofertas")
 
     busca = st.text_input("Buscar produto ou loja")
 
-    df = pd.read_sql("SELECT * FROM encartes ORDER BY curtidas DESC", conn)
+    dados = listar_encartes(conn)
+    df = pd.DataFrame(dados, columns=["id","produto","preco","loja","imagem","data","curtidas"])
 
-    if not df.empty:
-        if busca:
-            df = df[df["produto"].str.contains(busca, case=False) | df["loja"].str.contains(busca, case=False)]
+    if busca:
+        df = df[df["produto"].str.contains(busca, case=False) | df["loja"].str.contains(busca, case=False)]
 
-        for _, row in df.iterrows():
-            with st.container():
+    for _, row in df.iterrows():
+        with st.container():
 
-                # formatar data
+            data_fmt = ""
+            if row["data"]:
                 try:
-                    data_formatada = datetime.strptime(row['data'], "%Y-%m-%d").strftime("%d/%m/%Y")
+                    data_fmt = datetime.strptime(row["data"], "%Y-%m-%d").strftime("%d/%m/%Y")
                 except:
-                    data_formatada = row['data']
+                    data_fmt = row["data"]
 
-                st.markdown(f"""
-                <div class="offer-card">
-                    <div style="display:flex; justify-content:space-between;">
-                        <span class="loja-tag">{row['loja']}</span>
-                        <span style="font-size:12px; color:#64748b;">
-                            {data_formatada}
-                        </span>
-                    </div>
-
-                    <h3>{row['produto']}</h3>
-                    <div class="price-tag">R$ {row['preco']:.2f}</div>
+            st.markdown(f"""
+            <div class="card">
+                <div style="display:flex; justify-content:space-between;">
+                    <span class="loja">{row['loja']}</span>
+                    <span class="loja">{data_fmt}</span>
                 </div>
-                """, unsafe_allow_html=True)
 
-                # imagem correta
-                if os.path.exists(row["imagem"]):
-                    st.image(row["imagem"], use_container_width=True)
-                else:
-                    st.warning("Imagem não encontrada")
+                <h3>{row['produto']}</h3>
+                <div class="price">R$ {row['preco']:.2f}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-                st.write(f"❤️ {row['curtidas']} votos")
+            if row["imagem"] and os.path.exists(row["imagem"]):
+                st.image(row["imagem"], use_container_width=True)
 
-                if st.button(f"👍 Curtir {row['id']}"):
-                    cursor.execute(
-                        "UPDATE encartes SET curtidas = curtidas + 1 WHERE id = ?",
-                        (row["id"],)
-                    )
-                    conn.commit()
-                    st.rerun()
+            st.write(f"❤️ {row['curtidas']}")
 
-                st.divider()
+            if st.button(f"👍 Curtir {row['id']}"):
+                curtir(conn, row["id"])
+                st.rerun()
 
-    else:
-        st.info("Nenhum encarte cadastrado ainda.")
+            st.divider()
 
 # ==============================================================================
-# ENVIAR ENCARTE
+# NOVO ENCARTE
 # ==============================================================================
-elif menu == "Enviar Encarte":
+elif menu == "Novo Encarte":
     st.title("📤 Publicar Encarte")
 
-    with st.form("form_encarte"):
+    with st.form("form"):
         col1, col2 = st.columns(2)
 
         with col1:
-            nome = st.text_input("Produto")
+            produto = st.text_input("Produto")
             preco = st.number_input("Preço", min_value=0.01)
 
         with col2:
-            loja = st.text_input("Nome da Loja")
-            data = st.date_input("Data do Encarte")
+            loja = st.text_input("Loja")
+            data = st.date_input("Data")
 
-        imagem = st.file_uploader("Imagem", type=["png", "jpg", "jpeg"])
+        imagem = st.file_uploader("Imagem")
 
-        enviar = st.form_submit_button("Publicar")
+        submit = st.form_submit_button("Publicar")
 
-        if enviar:
-            if not nome or not loja:
-                st.error("Preencha produto e loja!")
+        if submit:
+            if not produto or not loja:
+                st.error("Preencha produto e loja")
             elif not imagem:
-                st.error("Envie uma imagem!")
+                st.error("Envie imagem")
             else:
-                caminho = f"uploads/{imagem.name}"
+                caminho = salvar_imagem(imagem)
 
-                with open(caminho, "wb") as f:
-                    f.write(imagem.getbuffer())
+                inserir_encarte(
+                    conn,
+                    produto,
+                    preco,
+                    loja,
+                    caminho,
+                    str(data)
+                )
 
-                cursor.execute("""
-                INSERT INTO encartes (produto, preco, loja, imagem, data)
-                VALUES (?, ?, ?, ?, ?)
-                """, (nome, preco, loja, caminho, str(data)))
-
-                conn.commit()
-
-                st.success(f"Encarte publicado por {loja}!")
+                st.success("Encarte publicado!")
 
 # ==============================================================================
-# ANÁLISE
+# ANALISE
 # ==============================================================================
 elif menu == "Análise":
-    st.title("📊 Inteligência de Mercado")
+    st.title("📊 Inteligência")
 
     df = pd.read_sql("SELECT * FROM encartes", conn)
 
     if not df.empty:
-        st.subheader("Ranking por Loja")
         ranking = df.groupby("loja")["curtidas"].sum().sort_values(ascending=False)
         st.bar_chart(ranking)
 
-        st.subheader("Tabela Completa")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df)
     else:
-        st.info("Sem dados ainda.")
-
-# ==============================================================================
-# FOOTER
-# ==============================================================================
-st.sidebar.markdown("---")
-st.sidebar.caption("Radar Encarte PRO © 2026")
+        st.info("Sem dados")
