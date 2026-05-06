@@ -34,44 +34,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔐 API GEMINI
+# 🔐 API GEMINI (OPCIONAL)
 # ==============================================================================
 try:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=API_KEY)
 except:
-    st.warning("Rodando sem IA (modo demo)")
+    pass
 
 URL_SISTEMA = "https://meu-radar-ofertas.streamlit.app"
 
 # ==============================================================================
-# 🧠 BANCO TEMPORÁRIO (MVP)
+# 🧠 BANCO TEMPORÁRIO
 # ==============================================================================
 if 'db_promocoes' not in st.session_state:
     st.session_state.db_promocoes = [
         {"produto": "Arroz 5kg", "preco": 21.50, "loja": "Super Hiper", "tipo": "dia", "pagamento": "Pix"},
-        {"produto": "Arroz 5kg", "preco": 23.90, "loja": "Mercadinho Zé", "tipo": "dia", "pagamento": "Cartão"},
         {"produto": "Feijão 1kg", "preco": 6.90, "loja": "Mercadinho Zé", "tipo": "semana", "pagamento": "Dinheiro"},
     ]
 
-# ==============================================================================
-# 🤖 IA
-# ==============================================================================
-def extrair_dados_ia(imagem):
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        prompt = """Extraia ofertas de supermercado.
-        Retorne JSON:
-        [{"produto": "nome", "preco": 0.00, "unidade": "kg/un"}]
-        """
-        response = model.generate_content([prompt, imagem])
-        texto = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(texto)
-    except:
-        return None
+if 'db_encartes' not in st.session_state:
+    st.session_state.db_encartes = []
 
 # ==============================================================================
-# 📊 FUNÇÃO DE ECONOMIA (SEM CONFLITO)
+# 📊 ECONOMIA (NEUTRO)
 # ==============================================================================
 def calcular_economia(df):
     if df.empty:
@@ -82,7 +68,7 @@ def calcular_economia(df):
     return df
 
 # ==============================================================================
-# 📱 SIDEBAR
+# 📱 MENU
 # ==============================================================================
 st.sidebar.title("💎 SuperRadar")
 modo = st.sidebar.selectbox("Menu", [
@@ -98,6 +84,18 @@ modo = st.sidebar.selectbox("Menu", [
 if modo == "👥 Comunidade":
     st.title("🛒 Ofertas da Comunidade")
 
+    # 🔥 ENCARTE
+    st.subheader("📰 Encartes das Lojas")
+
+    if st.session_state.db_encartes:
+        for encarte in st.session_state.db_encartes:
+            st.markdown(f"### 🏪 {encarte['loja']}")
+            st.image(encarte['imagem'], use_column_width=True)
+            st.divider()
+    else:
+        st.info("Nenhum encarte publicado ainda.")
+
+    # 🔎 FILTRO
     busca = st.text_input("🔍 Buscar produto")
     filtro = st.selectbox("Período", ["dia", "semana", "mes"])
 
@@ -114,7 +112,6 @@ if modo == "👥 Comunidade":
 
         for _, row in df.iterrows():
 
-            # Mensagem WhatsApp
             msg = f"""🔥 OFERTA 🔥
 
 📦 {row['produto']}
@@ -137,11 +134,11 @@ Veja mais:
             </div>
             """, unsafe_allow_html=True)
 
-            # ECONOMIA (NEUTRO)
+            # ECONOMIA SEM CONFLITO
             if row['economia'] > 0:
                 st.success(f"💰 Economia estimada: R$ {row['economia']:.2f}")
             else:
-                st.info("📊 Preço alinhado à média da região")
+                st.info("📊 Preço dentro da média")
 
             st.link_button("📢 Compartilhar", link)
             st.divider()
@@ -154,34 +151,28 @@ elif modo == "🏪 Lojista":
 
     loja = st.text_input("Nome da loja")
 
-    tab1, tab2 = st.tabs(["📸 IA", "✍️ Manual"])
+    tab1, tab2 = st.tabs(["📸 Encarte", "✍️ Cadastro Manual"])
 
-    # IA
+    # 📸 ENCARTE (SEM IA)
     with tab1:
-        foto = st.file_uploader("Upload encarte", type=["jpg", "png"])
+        st.subheader("Upload de Encarte")
+
+        foto = st.file_uploader("Envie o encarte", type=["jpg", "png", "jpeg"])
 
         if foto:
             img = Image.open(foto)
             st.image(img, width=300)
 
-            if st.button("Processar com IA"):
-                dados = extrair_dados_ia(img)
+            if st.button("💾 Salvar Encarte"):
+                st.session_state.db_encartes.append({
+                    "loja": loja,
+                    "imagem": img,
+                    "tipo": "dia"
+                })
 
-                if dados:
-                    for item in dados:
-                        item.update({
-                            "loja": loja,
-                            "tipo": "dia",
-                            "pagamento": "Pix/Cartão"
-                        })
-                        st.session_state.db_promocoes.append(item)
+                st.success("✅ Encarte salvo e publicado!")
 
-                    st.success("Ofertas adicionadas!")
-                    st.table(dados)
-                else:
-                    st.error("Erro na leitura")
-
-    # Manual
+    # ✍️ MANUAL
     with tab2:
         with st.form("form"):
             p = st.text_input("Produto")
@@ -189,7 +180,7 @@ elif modo == "🏪 Lojista":
             tipo = st.selectbox("Duração", ["dia", "semana", "mes"])
             pag = st.text_input("Pagamento")
 
-            if st.form_submit_button("Salvar"):
+            if st.form_submit_button("Salvar Oferta"):
                 st.session_state.db_promocoes.append({
                     "produto": p,
                     "preco": preco,
@@ -197,20 +188,23 @@ elif modo == "🏪 Lojista":
                     "tipo": tipo,
                     "pagamento": pag
                 })
-                st.success("Salvo!")
+
+                st.success("✅ Oferta salva!")
 
 # ==============================================================================
 # 🏆 RANKING
 # ==============================================================================
 elif modo == "🏆 Ranking":
-    st.title("🏆 Ranking")
+    st.title("🏆 Ranking de Lojas")
 
     df = pd.DataFrame(st.session_state.db_promocoes)
 
     if not df.empty:
         rank = df['loja'].value_counts().reset_index()
-        rank.columns = ['Loja', 'Ofertas']
+        rank.columns = ['Loja', 'Qtd Ofertas']
         st.table(rank)
+    else:
+        st.info("Sem dados ainda.")
 
 # ==============================================================================
 # 💰 PLANOS
@@ -223,11 +217,14 @@ elif modo == "💰 Planos":
     with c1:
         st.subheader("Básico")
         st.write("R$ 49/mês")
+        st.write("- Cadastro manual")
 
     with c2:
         st.subheader("Pro")
         st.write("R$ 149/mês")
+        st.write("- Destaque no app")
 
     with c3:
         st.subheader("Enterprise")
         st.write("R$ 399/mês")
+        st.write("- Relatórios avançados")
