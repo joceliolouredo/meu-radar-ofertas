@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 # ==============================================================================
-# ⚙️ CONFIG
+# CONFIG
 # ==============================================================================
 st.set_page_config(page_title="SuperRadar", layout="wide")
 
@@ -17,7 +17,7 @@ PASTA = "encartes_img"
 os.makedirs(PASTA, exist_ok=True)
 
 # ==============================================================================
-# 🔐 LOGIN SIMPLES
+# LOGIN SIMPLES
 # ==============================================================================
 if "usuario" not in st.session_state:
     nome = st.text_input("Digite seu nome")
@@ -30,15 +30,19 @@ if "usuario" not in st.session_state:
 user_id = st.session_state.user_id
 
 # ==============================================================================
-# 💾 BANCO LOCAL COM CORREÇÃO AUTOMÁTICA
+# BANCO COM CORREÇÃO AUTOMÁTICA
 # ==============================================================================
 def carregar():
     if os.path.exists(ARQUIVO):
         with open(ARQUIVO, "r") as f:
             dados = json.load(f)
 
-            # 🔥 Corrige dados antigos automaticamente
             for item in dados:
+                # Corrige imagem antiga
+                if "imagem" not in item and "imagem_path" in item:
+                    item["imagem"] = item["imagem_path"]
+
+                # Campos obrigatórios
                 item.setdefault("likes", 0)
                 item.setdefault("liked_users", [])
                 item.setdefault("timestamp", datetime.now().isoformat())
@@ -53,17 +57,19 @@ def salvar(dados):
 encartes = carregar()
 
 # ==============================================================================
-# 📱 MENU
+# MENU
 # ==============================================================================
 modo = st.sidebar.selectbox("Menu", ["👥 Comunidade", "🏪 Lojista", "🏆 Ranking"])
 
 # ==============================================================================
-# 👥 COMUNIDADE
+# COMUNIDADE
 # ==============================================================================
 if modo == "👥 Comunidade":
     st.title("🔥 Radar de Encartes")
 
-    # 🔄 CARROSSEL
+    # =======================
+    # CARROSSEL
+    # =======================
     if encartes:
         st.subheader("✨ Destaques")
 
@@ -74,38 +80,61 @@ if modo == "👥 Comunidade":
 
         atual = ordenados[st.session_state.carousel]
 
-        st.image(atual['imagem'], use_column_width=True)
-        st.markdown(f"**🏪 {atual['loja']}**")
-        st.markdown(f"👍 {atual.get('likes', 0)} curtidas")
+        img = atual.get("imagem")
+        if img:
+            st.image(img, use_column_width=True)
 
-        time.sleep(30)
+        st.markdown(f"**🏪 {atual['loja']}**")
+        st.markdown(f"👍 {atual.get('likes',0)} curtidas")
+
+        time.sleep(10)  # pode ajustar
         st.session_state.carousel = (st.session_state.carousel + 1) % len(ordenados)
         st.rerun()
 
-    # 📰 GRID
-    st.subheader("📰 Todos os Encartes")
+    # =======================
+    # GRID
+    # =======================
+    st.subheader("📰 Encartes")
 
-    cols = st.columns(3)
+    cols = st.columns(4)
 
     for i, encarte in enumerate(encartes):
-        with cols[i % 3]:
-            st.image(encarte['imagem'], use_column_width=True)
-            st.markdown(f"**{encarte['loja']}**")
+        with cols[i % 4]:
 
-            likes = encarte.get('likes', 0)
-            st.markdown(f"👍 {likes}")
+            img = encarte.get("imagem")
 
-            if user_id not in encarte['liked_users']:
-                if st.button("👍 Curtir", key=f"like_{i}"):
-                    encartes[i]['likes'] += 1
-                    encartes[i]['liked_users'].append(user_id)
-                    salvar(encartes)
-                    st.rerun()
-            else:
-                st.caption("✅ Já curtiu")
+            if img:
+                st.image(img, use_column_width=True)
+
+                st.markdown(f"**{encarte['loja']}**")
+                st.markdown(f"👍 {encarte.get('likes',0)}")
+
+                # Curtida única
+                if user_id not in encarte['liked_users']:
+                    if st.button("👍 Curtir", key=f"like_{i}"):
+                        encartes[i]['likes'] += 1
+                        encartes[i]['liked_users'].append(user_id)
+                        salvar(encartes)
+                        st.rerun()
+                else:
+                    st.caption("✅ Já curtiu")
+
+                # Botão expandir
+                if st.button("🔍 Ver maior", key=f"view_{i}"):
+                    st.session_state["zoom_img"] = img
+
+    # =======================
+    # MODAL DE ZOOM
+    # =======================
+    if "zoom_img" in st.session_state:
+        st.markdown("### 🔍 Visualização ampliada")
+        st.image(st.session_state["zoom_img"], use_column_width=True)
+
+        if st.button("Fechar"):
+            del st.session_state["zoom_img"]
 
 # ==============================================================================
-# 🏪 LOJISTA
+# LOJISTA
 # ==============================================================================
 elif modo == "🏪 Lojista":
     st.title("🏪 Painel do Lojista")
@@ -138,7 +167,7 @@ elif modo == "🏪 Lojista":
         st.success("Encartes salvos!")
         st.rerun()
 
-    # 🗂️ GERENCIAR
+    # Gerenciar
     st.subheader("Seus Encartes")
 
     for i, encarte in enumerate(encartes):
@@ -146,7 +175,7 @@ elif modo == "🏪 Lojista":
             col1, col2 = st.columns([3,1])
 
             with col1:
-                st.image(encarte['imagem'], width=250)
+                st.image(encarte['imagem'], width=200)
 
             with col2:
                 if st.button("❌ Excluir", key=f"del_{i}"):
@@ -158,36 +187,26 @@ elif modo == "🏪 Lojista":
                     st.rerun()
 
 # ==============================================================================
-# 🏆 RANKING
+# RANKING
 # ==============================================================================
 elif modo == "🏆 Ranking":
-    st.title("🏆 Ranking de Curtidas")
+    st.title("🏆 Ranking")
 
     if encartes:
         df = pd.DataFrame(encartes)
 
-        # 🔒 proteção contra erro
         if 'likes' not in df.columns:
             df['likes'] = 0
 
-        # 🥇 Top geral
         st.subheader("🔥 Mais Curtidos")
-        top = df.sort_values(by="likes", ascending=False).head(5)
-        st.table(top[['loja', 'likes']])
+        st.table(df.sort_values(by="likes", ascending=False)[['loja','likes']].head(5))
 
-        # 📅 Hoje
         df['data'] = pd.to_datetime(df['timestamp']).dt.date
         hoje = datetime.now().date()
-        hoje_df = df[df['data'] == hoje]
 
         st.subheader("📅 Hoje")
-        st.table(hoje_df.sort_values(by="likes", ascending=False)[['loja','likes']])
+        st.table(df[df['data'] == hoje].sort_values(by="likes", ascending=False)[['loja','likes']])
 
-        # 📆 Semana
         semana = datetime.now() - timedelta(days=7)
-        semana_df = df[pd.to_datetime(df['timestamp']) >= semana]
-
         st.subheader("📆 Semana")
-        st.table(semana_df.sort_values(by="likes", ascending=False)[['loja','likes']])
-    else:
-        st.info("Sem dados ainda.")
+        st.table(df[pd.to_datetime(df['timestamp']) >= semana].sort_values(by="likes", ascending=False)[['loja','likes']])
