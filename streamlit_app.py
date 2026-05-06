@@ -1,174 +1,155 @@
 import streamlit as st
-import google.generativeai as genai
-from PIL import Image
 import pandas as pd
-import json
 import urllib.parse
+import random
 
 # ==============================================================================
-# ⚙️ CONFIGURAÇÕES DE ELITE (UI/UX)
+# ⚙️ CONFIGURAÇÕES DE ELITE & DESIGN
 # ==============================================================================
-st.set_page_config(page_title="SuperRadar SaaS", layout="wide", page_icon="💰")
+st.set_page_config(page_title="SuperRadar Social", layout="wide", page_icon="🏆")
 
-# CSS para transformar a página em um Aplicativo Profissional
+# CSS Profissional para transformar o site em um App de Comunidade
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
+    .main { background-color: #f0f2f6; }
     .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #16a34a; color: white; font-weight: bold; border: none; }
-    .stButton>button:hover { background-color: #12853c; color: white; }
-    .offer-card { background-color: white; padding: 20px; border-radius: 15px; border-left: 8px solid #16a34a; margin-bottom: 15px; box-shadow: 2px 2px 15px rgba(0,0,0,0.05); color: black; }
-    .best-price-box { background-color: #dcfce7; border: 2px solid #16a34a; padding: 15px; border-radius: 12px; text-align: center; font-weight: bold; color: #16a34a; margin-bottom: 20px; }
+    .offer-card { background-color: white; padding: 20px; border-radius: 15px; border-left: 8px solid #16a34a; margin-bottom: 15px; box-shadow: 2px 2px 15px rgba(0,0,0,0.1); color: black; }
+    .best-price-badge { background-color: #ffd700; color: black; padding: 5px 10px; border-radius: 5px; font-weight: bold; font-size: 12px; display: inline-block; margin-bottom: 10px; }
+    .marquee { background: #16a34a; color: white; padding: 10px; font-weight: bold; border-radius: 10px; text-align: center; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# SEGURANÇA: Busca a chave no cofre de Secrets
-try:
-    API_KEY = st.secrets["GOOGLE_API_KEY"]
-except:
-    st.error("❌ API KEY não configurada nos Secrets do Streamlit!")
-    st.stop()
-
-genai.configure(api_key=API_KEY)
-
-# MODELO ULTRA ESTÁVEL (Para evitar erro 404)
-MODEL_NAME = 'gemini-pro' 
-
-# URL do seu site (Lembre-se de trocar pelo seu link real do Streamlit)
 URL_SISTEMA = "https://meu-radar-ofertas.streamlit.app"
 
-# BANCO DE DADOS EM SESSÃO
+# ==============================================================================
+# 🗄️ BANCO DE DADOS SOCIAL (Lógica de Curtidas e Votos)
+# ==============================================================================
 if 'db_promocoes' not in st.session_state:
+    # Adicionamos a coluna 'curtidas' para criar o ranking social
     st.session_state.db_promocoes = [
-        {"produto": "Arroz 5kg", "preco": 21.50, "loja": "Super Hiper", "tipo": "dia", "pagamento": "Pix"},
-        {"produto": "Arroz 5kg", "preco": 23.00, "loja": "Mercadinho Zé", "tipo": "dia", "pagamento": "Pix"},
+        {"produto": "Arroz 5kg", "preco": 21.50, "loja": "Super Hiper", "tipo": "dia", "pagamento": "Pix", "curtidas": 150},
+        {"produto": "Feijão 1kg", "preco": 6.90, "loja": "Mercadinho Zé", "tipo": "semana", "pagamento": "Dinheiro", "curtidas": 80},
+        {"produto": "Leite 1L", "preco": 4.10, "loja": "EcoPreço", "tipo": "dia", "pagamento": "Cartão", "curtidas": 210},
     ]
 
 # ==============================================================================
-# 🧠 MOTOR DE IA COM LIMPEZA AVANÇADA DE JSON
+# 📱 INTERFACE E NAVEGAÇÃO
 # ==============================================================================
-def processar_texto_ia(texto_ofertas):
-    try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        prompt = f"""
-        Você é um extrator de dados de supermercado. Transforme a lista abaixo em JSON.
-        REGRAS:
-        1. Retorne APENAS o JSON. Não escreva frases como 'Aqui está o resultado'.
-        2. Formato: [ {{"produto": "nome", "preco": 0.00}} ]
-        3. Use ponto para decimais (Ex: 10.50).
-        TEXTO: {texto_ofertas}
-        """
-        response = model.generate_content(prompt)
-        texto_bruto = response.text.strip()
-        
-        # LIMPEZA AVANÇADA: Localiza o início [ e o fim ] do JSON para ignorar conversas da IA
-        if "[" in texto_bruto and "]" in texto_bruto:
-            inicio = texto_bruto.find("[")
-            fim = texto_bruto.rfind("]") + 1
-            json_limpo = texto_bruto[inicio:fim]
-            return json.loads(json_limpo)
-        return None
-    except Exception as e:
-        st.error(f"Erro técnico na IA: {e}")
-        return None
-
-# ==============================================================================
-# 📱 INTERFACE DO SISTEMA
-# ==============================================================================
-st.sidebar.title("💎 SuperRadar SaaS")
+st.sidebar.title("💎 SuperRadar Social")
 st.sidebar.markdown("---")
-app_mode = st.sidebar.selectbox("Acesse o Painel:", ["👥 Visão da Comunidade", "🔍 Comparador de Preços", "🏪 Painel do Lojista", "🏆 Ranking Global", "💰 Planos"])
+app_mode = st.sidebar.selectbox("Acesse o Painel:", ["👥 Comunidade", "🔍 Comparador", "🏪 Lojista", "🏆 Ranking Social", "💰 Planos"])
 
 # ------------------------------------------------------------------------------
-# MÓDULO 1: VISÃO DA COMUNIDADE
+# MÓDULO 1: VISÃO DA COMUNIDADE (SISTEMA DE VITRINE)
 # ------------------------------------------------------------------------------
-if app_mode == "👥 Visão da Comunidade":
-    st.title("🛒 Ofertas da Comunidade")
-    st.markdown("As melhores promoções da região em tempo real.")
-
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        busca = st.text_input("🔍 Qual produto você procura?")
-    with col2:
-        filtro_tempo = st.selectbox("Período", ["dia", "semana", "mes"])
-
+if app_mode == "👥 Comunidade":
+    st.title("🛒 Radar de Ofertas")
+    
+    # --- TARJA DE MELHORES DA SEMANA (MARQUEE) ---
     df = pd.DataFrame(st.session_state.db_promocoes)
     if not df.empty:
-        res = df[(df['tipo'] == filtro_tempo) & (df['produto'].str.contains(busca, case=False))]
-        if res.empty:
-            st.info("Nenhuma oferta encontrada.")
-        else:
-            for _, row in res.iterrows():
-                msg = f"🔥 *OFERTA!* 🔥\n\n📦 {row['produto']}\n💰 R$ {row['preco']:.2f}\n🛒 {row['loja']}\n\n👇 {URL_SISTEMA}"
-                link_whats = f"https://wa.me/?text={urllib.parse.quote(msg)}"
-                st.markdown(f"""<div class="offer-card">
-                    <small style="color: gray;">{row['loja'].upper()}</small><br>
-                    <strong style="font-size: 20px;">{row['produto']}</strong><br>
-                    <span style="font-size: 24px; color: #16a34a; font-weight: bold;">R$ {row['preco']:.2f}</span>
-                    <span style="font-size: 12px; color: gray;">({row['pagamento']})</span>
-                    </div>""", unsafe_allow_html=True)
-                st.link_button("📢 Divulgar no WhatsApp", link_whats, use_container_width=True)
-                st.divider()
+        melhores = df.sort_values(by='curtidas', ascending=False).head(3)
+        texto_marquee = " 🔥 MELHORES DA SEMANA: " + " | ".join([f"{row['produto']} - R${row['preco']:.2f} em {row['loja']}" for _, row in melhores.iterrows()]) + " 🔥 "
+        st.markdown(f'<div class="marquee"><marquee>{texto_marquee}</marquee></div>', unsafe_allow_html=True)
+
+    # Filtros
+    c1, c2 = st.columns([3, 1])
+    with c1: busca = st.text_input("🔍 Buscar produto...")
+    with c2: tab = st.selectbox("Período", ["dia", "semana", "mes"])
+
+    # Ordenação: Primeiro as mais curtidas (Vitrine)
+    df_sorted = df.sort_values(by='curtidas', ascending=False)
+    
+    if not df.empty:
+        res = df_sorted[(df_sorted['tipo'] == tab) & (df_sorted['produto'].str.contains(busca, case=False))]
+        
+        for index, row in res.iterrows():
+            # Badge de "Mais Curtido"
+            badge = '<div class="best-price-badge">⭐ MAIS CURTIDO</div>' if row['curtidas'] > 100 else ""
+            
+            msg = f"🔥 *OFERTA!* 🔥\n\n📦 {row['produto']}\n💰 R$ {row['preco']:.2f}\n🛒 {row['loja']}\n\n👇 {URL_SISTEMA}"
+            link_whats = f"https://wa.me/?text={urllib.parse.quote(msg)}"
+            
+            st.markdown(f"""<div class="offer-card">
+                {badge}
+                <small style="color: gray;">{row['loja'].upper()}</small><br>
+                <strong style="font-size: 20px;">{row['produto']}</strong><br>
+                <span style="font-size: 24px; color: #16a34a; font-weight: bold;">R$ {row['preco']:.2f}</span>
+                <span style="font-size: 12px; color: gray;">({row['pagamento']})</span>
+                <div style="margin-top:10px; color: #e11d48; font-weight: bold;">❤️ {row['curtidas']} curtidas</div>
+                </div>""", unsafe_allow_html=True)
+            
+            # BOTÃO DE CURTIR (Lógica de Voto)
+            if st.button(f"❤️ Curtir {row['produto']}", key=f"like_{index}"):
+                st.session_state.db_promocoes[index]['curtidas'] += 1
+                st.rerun()
+            
+            st.link_button("📢 Divulgar no WhatsApp", link_whats, use_container_width=True)
+            st.divider()
 
 # ------------------------------------------------------------------------------
-# MÓDULO 2: COMPARADOR de PREÇOS
+# MÓDULO 2: COMPARADOR E GRÁFICOS
 # ------------------------------------------------------------------------------
-elif app_mode == "🔍 Comparador de Preços":
-    st.title("🔍 Quem tem o melhor preço?")
-    prod_busca = st.text_input("Digite o produto para comparar (ex: Arroz)")
+elif app_mode == "🔍 Comparador":
+    st.title("🔍 Análise de Economia")
+    prod_busca = st.text_input("Produto para comparar (ex: Arroz)")
     
     if prod_busca:
         df = pd.DataFrame(st.session_state.db_promocoes)
-        comparativo = df[df['produto'].str.contains(prod_busca, case=False)].sort_values(by='preco')
+        comp = df[df['produto'].str.contains(prod_busca, case=False)].sort_values(by='preco')
         
-        if not comparativo.empty:
-            vencedor = comparativo.iloc[0]
-            st.markdown(f"""<div class="best-price-box">
-                🏆 O MELHOR PREÇO DE {prod_busca.upper()} ESTÁ NO: <br>
-                <span style="font-size: 22px;">{vencedor['loja']} - R$ {vencedor['preco']:.2f}</span>
-                </div>""", unsafe_allow_html=True)
-            st.table(comparativo[['loja', 'preco', 'pagamento']])
+        if not comp.empty:
+            st.markdown(f'<div class="best-price-box">🏆 O MELHOR PREÇO ESTÁ EM: {comp.iloc[0]["loja"]} - R$ {comp.iloc[0]["preco"]:.2f}</div>', unsafe_allow_html=True)
+            
+            # GRÁFICO DE ECONOMIA
+            st.write("### 📊 Comparativo de Preços")
+            st.bar_chart(data=comp.set_index('loja')['preco'])
+            st.table(comp[['loja', 'preco', 'pagamento']])
         else:
-            st.warning("Nenhum mercado cadastrou este produto.")
+            st.warning("Produto não encontrado.")
 
 # ------------------------------------------------------------------------------
 # MÓDULO 3: PAINEL DO LOJISTA
 # ------------------------------------------------------------------------------
-elif app_mode == "🏪 Painel do Lojista":
-    st.title("🏪 Painel do Supermercado")
+elif app_mode == "🏪 Lojista":
+    st.title("🏪 Gestão de Ofertas")
     loja_nome = st.text_input("Nome do seu Supermercado", value="Minha Loja")
     
-    st.subheader("🤖 Cadastro Inteligente")
-    st.write("Cole a lista de ofertas (Ex: Arroz 5kg 22.90, Feijão 6.50...)")
-    texto_input = st.text_area("Cole as ofertas aqui...", height=150)
-    
-    if st.button("🚀 Transformar Texto em Cards"):
-        if texto_input:
-            with st.spinner("IA organizando as ofertas..."):
-                dados = processar_texto_ia(texto_input)
-                if dados:
-                    for item in dados:
-                        item.update({'loja': loja_nome, 'tipo': 'dia', 'pagamento': 'Pix/Cartão'})
-                        st.session_state.db_promocoes.append(item)
-                    st.success(f"✅ {len(dados)} ofertas cadastradas!")
-                    st.table(dados)
-                else:
-                    st.error("A IA não conseguiu processar. Tente escrever: 'Produto Preço' (ex: Arroz 22.90)")
-        else:
-            st.warning("Por favor, cole algum texto.")
+    with st.form("form_oferta"):
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1: prod = st.text_input("Produto")
+        with col2: preco = st.number_input("Preço", min_value=0.0)
+        with col3: pag = st.text_input("Pagamento", value="Pix")
+        tipo = st.selectbox("Duração", ["dia", "semana", "mes"])
+        
+        if st.form_submit_button("✅ Publicar Oferta"):
+            if prod and preco > 0:
+                st.session_state.db_promocoes.append({"produto": prod, "preco": preco, "loja": loja_nome, "tipo": tipo, "pagamento": pag, "curtidas": 0})
+                st.success("Oferta publicada na vitrine!")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 4: RANKING E PLANOS
+# MÓDULO 4: RANKING SOCIAL (SISTEMA DE ESTRELAS)
 # ------------------------------------------------------------------------------
-elif app_mode == "🏆 Ranking Global":
-    st.title("🏆 Ranking de Economia")
+elif app_mode == "🏆 Ranking Social":
+    st.title("🏆 Ranking dos Mais Amados")
+    st.markdown("Lojas com as ofertas mais curtidas pela comunidade.")
+    
     df = pd.DataFrame(st.session_state.db_promocoes)
     if not df.empty:
-        rank = df['loja'].value_counts().reset_index()
-        rank.columns = ['Supermercado', 'Quantidade de Ofertas']
+        # Soma todas as curtidas de cada loja
+        rank = df.groupby('loja')['curtidas'].sum().sort_values(ascending=False).reset_index()
+        rank.columns = ['Supermercado', 'Total de Curtidas']
+        
+        # Exibição com Medalhas
+        for i, row in rank.iterrows():
+            medalha = "🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "⭐"
+            st.markdown(f"### {medalha} {row['Supermercado']} - {row['Total de Curtidas']} ❤️")
+            st.progress(int(row['Total de Curtidas'] / max(rank['Total de Curtidas']) * 100) / 100)
+        
         st.table(rank)
     else:
-        st.write("Sem dados disponíveis.")
+        st.write("Ainda não há votos.")
 
 elif app_mode == "💰 Planos":
     st.title("💰 Planos para Lojistas")
-    st.markdown("SaaS Profissional para Supermercados.\n\n- **Básico:** R$ 49/mês\n- **Pro:** R$ 149/mês\n- **Enterprise:** R$ 399/mês")
+    st.markdown("SaaS Profissional: Básico R$ 49 | Pro R$ 149 | Enterprise R$ 399")
