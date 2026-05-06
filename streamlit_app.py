@@ -30,12 +30,20 @@ if "usuario" not in st.session_state:
 user_id = st.session_state.user_id
 
 # ==============================================================================
-# 💾 BANCO LOCAL
+# 💾 BANCO LOCAL COM CORREÇÃO AUTOMÁTICA
 # ==============================================================================
 def carregar():
     if os.path.exists(ARQUIVO):
         with open(ARQUIVO, "r") as f:
-            return json.load(f)
+            dados = json.load(f)
+
+            # 🔥 Corrige dados antigos automaticamente
+            for item in dados:
+                item.setdefault("likes", 0)
+                item.setdefault("liked_users", [])
+                item.setdefault("timestamp", datetime.now().isoformat())
+
+            return dados
     return []
 
 def salvar(dados):
@@ -68,7 +76,7 @@ if modo == "👥 Comunidade":
 
         st.image(atual['imagem'], use_column_width=True)
         st.markdown(f"**🏪 {atual['loja']}**")
-        st.markdown(f"👍 {atual['likes']} curtidas")
+        st.markdown(f"👍 {atual.get('likes', 0)} curtidas")
 
         time.sleep(30)
         st.session_state.carousel = (st.session_state.carousel + 1) % len(ordenados)
@@ -83,7 +91,9 @@ if modo == "👥 Comunidade":
         with cols[i % 3]:
             st.image(encarte['imagem'], use_column_width=True)
             st.markdown(f"**{encarte['loja']}**")
-            st.markdown(f"👍 {encarte['likes']}")
+
+            likes = encarte.get('likes', 0)
+            st.markdown(f"👍 {likes}")
 
             if user_id not in encarte['liked_users']:
                 if st.button("👍 Curtir", key=f"like_{i}"):
@@ -156,14 +166,18 @@ elif modo == "🏆 Ranking":
     if encartes:
         df = pd.DataFrame(encartes)
 
+        # 🔒 proteção contra erro
+        if 'likes' not in df.columns:
+            df['likes'] = 0
+
         # 🥇 Top geral
-        top = df.sort_values(by="likes", ascending=False).head(5)
         st.subheader("🔥 Mais Curtidos")
+        top = df.sort_values(by="likes", ascending=False).head(5)
         st.table(top[['loja', 'likes']])
 
         # 📅 Hoje
-        hoje = datetime.now().date()
         df['data'] = pd.to_datetime(df['timestamp']).dt.date
+        hoje = datetime.now().date()
         hoje_df = df[df['data'] == hoje]
 
         st.subheader("📅 Hoje")
